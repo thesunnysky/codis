@@ -33,6 +33,7 @@ type Proxy struct {
 	xauth string
 	model *models.Proxy
 
+	//接收退出信息的channel
 	exit struct {
 		C chan struct{}
 	}
@@ -40,17 +41,28 @@ type Proxy struct {
 	closed bool
 
 	config *Config
+	//Router中存储了集群中所有sharedBackendConnPool和slot，用于将redis请求转发给相应的slot进行处理
 	router *Router
 	ignore []byte
 
+	//监听proxy的19000端口的Listener，也就是proxy实际工作的端口
 	lproxy net.Listener
+	//监听proxy_admin的11080端口的Listener，也就是codis集群和proxy进行交互的端口
 	ladmin net.Listener
 
 	ha struct {
+		//上帝视角sentinel，并不是真正的物理服务器
+		//s := &Sentinel{Product: product, Auth: auth}
+		//s.Context, s.Cancel = context.WithCancel(context.Background())
 		monitor *redis.Sentinel
+
+		//int为groupId，标示每个group的主服务器
 		masters map[int]string
+
+		//当前集群中的所有物理sentinel
 		servers []string
 	}
+	//java客户端Jodis与codis集群交互，就是通过下面的struct，里面存储了zkClient以及"/jodis/codis-wujiang/proxy-token"这个路径
 	jodis *Jodis
 }
 
@@ -68,6 +80,8 @@ func New(config *Config) (*Proxy, error) {
 	s.config = config
 	s.exit.C = make(chan struct{})
 	//设置路由
+	//通过config new一个Router，这一步只是初始化了Router中的两个sharedBackendConnPool的结构，
+	//也就是map[string]*sharedBackendConn
 	s.router = NewRouter(config)
 	s.ignore = make([]byte, config.ProxyHeapPlaceholder.Int64())
 
@@ -94,7 +108,9 @@ func New(config *Config) (*Proxy, error) {
 
 	unsafe2.SetMaxOffheapBytes(config.ProxyMaxOffheapBytes.Int64())
 
+	//准备接受codis集群连接请求
 	go s.serveAdmin()
+	//准备接受redis连接请求
 	go s.serveProxy()
 
 	s.startMetricsJson()
@@ -371,6 +387,7 @@ func (s *Proxy) rewatchSentinels(servers []string) {
 	}
 }
 
+//当集群配置命令请求向prxoy_admin的11080端口发过来之后，转发做相应处理
 func (s *Proxy) serveAdmin() {
 	if s.IsClosed() {
 		return
@@ -403,17 +420,19 @@ func (s *Proxy) serveProxy() {
 
 	log.Warnf("[%p] proxy start service on %s", s, s.lproxy.Addr())
 
-	eh := make(chan error, 1)
 	//通过chan来处理goroutine中出现error的情况
+	eh := make(chan error, 1)
 	go func(l net.Listener) (err error) {
 		defer func() {
 			eh <- err
 		}()
 		for {
+			//启动goroutine监听19000端口请求，有请求到来的时候，返回net.Conn
 			c, err := s.acceptConn(l)
 			if err != nil {
 				return err
 			}
+			//启动一个新的session
 			NewSession(c, s.config).Start(s.router)
 		}
 	}(s.lproxy)

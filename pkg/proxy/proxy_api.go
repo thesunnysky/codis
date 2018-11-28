@@ -26,6 +26,7 @@ type apiServer struct {
 	proxy *Proxy
 }
 
+//newApiServer方法使用了这里使用了martini框架
 func newApiServer(p *Proxy) http.Handler {
 	m := martini.New()
 	m.Use(martini.Recovery())

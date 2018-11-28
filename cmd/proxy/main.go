@@ -184,6 +184,7 @@ Options:
 		log.Warnf("option --session_auth = %s", s)
 	}
 
+	//启动proxy
 	s, err := proxy.New(config)
 	if err != nil {
 		log.PanicErrorf(err, "create proxy with config file failed\n%s", config)
@@ -207,6 +208,7 @@ Options:
 		}
 	}
 
+	//感觉有用
 	go func() {
 		defer s.Close()
 		c := make(chan os.Signal, 1)
@@ -225,6 +227,7 @@ Options:
 		go AutoOnlineWithFillSlots(s, slots)
 	}
 
+	//未关闭，但也不在线的时候，控制台每秒输出日志
 	for !s.IsClosed() && !s.IsOnline() {
 		log.Warnf("[%p] proxy waiting online ...", s)
 		time.Sleep(time.Second)
