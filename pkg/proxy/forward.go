@@ -14,6 +14,11 @@ import (
 	"github.com/thesunnysky/codis/pkg/utils/log"
 )
 
+//每一个slot可能有两种forwardMethod，分别是forwardSync或者forwardSemiSync，原理类似，都是将指定的slot、request、键的哈希值，
+// 经过process得到实际处理请求的BackendConn，然后把请求放入BackendConn的chan *Request中，等待处理。这两个的区别就是，
+// 如果一个slot在迁移中，proxy分别会使用SLOTSMGRTTAGONE和SLOTSMGRT-EXEC-WRAPPER强制完成其迁移。
+// BackendConn一般最重要的信息就是redis服务器的地址（例如10.0.2.15:6379）以及对应的database编号（0到15，一般就是0）。
+
 type forwardMethod interface {
 	GetId() int
 	Forward(s *Slot, r *Request, hkey []byte) error
@@ -33,12 +38,14 @@ func (d *forwardSync) GetId() int {
 }
 
 func (d *forwardSync) Forward(s *Slot, r *Request, hkey []byte) error {
+	//slot加锁
 	s.lock.RLock()
 	bc, err := d.process(s, r, hkey)
 	s.lock.RUnlock()
 	if err != nil {
 		return err
 	}
+	//请求放入BackendConn等待处理
 	bc.PushBack(r)
 	return nil
 }
@@ -49,6 +56,7 @@ func (d *forwardSync) process(s *Slot, r *Request, hkey []byte) (*BackendConn, e
 			s.id, hkey)
 		return nil, ErrSlotIsNotReady
 	}
+	//如果这个slot处在迁移过程中，那么其migrate就不为空（从何处迁移），由proxy的slot的fowardMethod强制对其完成迁移
 	if s.migrate.bc != nil && len(hkey) != 0 {
 		if err := d.slotsmgrt(s, hkey, r.Database, r.Seed16()); err != nil {
 			log.Debugf("slot-%04d migrate from = %s to %s failed: hash key = '%s', database = %d, error = %s",
@@ -69,6 +77,7 @@ func (d *forwardSemiAsync) GetId() int {
 	return models.ForwardSemiAsync
 }
 
+//forwardSemiAsync的Forward和process
 func (d *forwardSemiAsync) Forward(s *Slot, r *Request, hkey []byte) error {
 	var loop int
 	for {
@@ -213,6 +222,8 @@ func (d *forwardHelper) slotsmgrtExecWrapper(s *Slot, hkey []byte, database int3
 	}
 }
 
+//无论是forwardSync还是forwardSemiAsync，在process的过程中，
+//都要调用的forward2方法来从Slot获取真正处理redis请求的BackendConn
 func (d *forwardHelper) forward2(s *Slot, r *Request) *BackendConn {
 	var database, seed = r.Database, r.Seed16()
 	if s.migrate.bc == nil && !r.IsMasterOnly() && len(s.replicaGroups) != 0 {
@@ -226,5 +237,6 @@ func (d *forwardHelper) forward2(s *Slot, r *Request) *BackendConn {
 			}
 		}
 	}
+	//从sharedBackendConn中取出一个BackendConn（sharedBackendConn中储存了BackendConn组成的二维切片）
 	return s.backend.bc.BackendConn(database, seed, true)
 }

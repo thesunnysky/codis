@@ -1,6 +1,12 @@
 // Copyright 2016 CodisLabs. All Rights Reserved.
 // Licensed under the MIT (MIT-LICENSE.txt) license.
 
+//在启动proxy的时候，会有一个goroutine专门负责监听发送到19000端口的redis请求。每次有redis请求过来，会新建一个session，
+// 并启动两个goroutine，loopReader和loopWriter。loopReader的作用是，Router根据请求指派到slot，并找到slot后面真正处理
+// 请求的BackendConn，再将请求放入BackendConn的RequestChan中，等待后续取出并进行处理，然后将请求写入session的RequestChan。
+// loopWriter则将请求的结果从session的RequestChan（Request的*redis.Resp属性）中取出并返回，如果是MSET这种批处理的请求，
+// 要注意合并结果再返回
+
 package proxy
 
 import (
@@ -113,6 +119,7 @@ var RespOK = redis.NewString([]byte("OK"))
 
 func (s *Session) Start(d *Router) {
 	s.start.Do(func() {
+		//检查active的session数量是否超过了ProxyMaxClients
 		if int(incrSessions()) > s.config.ProxyMaxClients {
 			go func() {
 				s.Conn.Encode(redis.NewErrorf("ERR max number of clients reached"), true)
@@ -138,12 +145,16 @@ func (s *Session) Start(d *Router) {
 		tasks := NewRequestChanBuffer(1024)
 
 		go func() {
+			//合并请求结果，返回给客户端
 			s.loopWriter(tasks)
+			//active session -1
 			decrSessions()
 		}()
 
 		go func() {
+			//loopReader负责读取和分发请求到后端
 			s.loopReader(tasks, d)
+			//所有请求取完或者proxy退出之后，loopReader()方法就会结束，关闭tasks这个requestChan
 			tasks.Close()
 		}()
 	})
@@ -159,6 +170,7 @@ func (s *Session) loopReader(tasks *RequestChan, d *Router) (err error) {
 		maxPipelineLen = s.config.SessionMaxPipeline
 	)
 
+	//session只要没有退出，就一直从conn中取请求，直到请求取完就return，然后会关闭tasks这个requestChan
 	for !s.quit {
 		multi, err := s.Conn.DecodeMultiBulk()
 		if err != nil {
@@ -169,6 +181,7 @@ func (s *Session) loopReader(tasks *RequestChan, d *Router) (err error) {
 		}
 		s.incrOpTotal()
 
+		//检测requestChan的data是否超过配置的每个pipeline最大请求长度，默认为10000
 		if tasks.Buffered() > maxPipelineLen {
 			return s.incrOpFails(nil, ErrTooManyPipelinedRequests)
 		}
@@ -178,11 +191,16 @@ func (s *Session) loopReader(tasks *RequestChan, d *Router) (err error) {
 		s.Ops++
 
 		r := &Request{}
+		//这个Multi非常重要，请求的参数就在里面，是一个[]*redis.Resp切片
 		r.Multi = multi
+		//WaitGroup的作用是，阻塞主线程的执行，一直等到所有的goroutine执行完成。每创建一个goroutine
+		//就把任务队列中任务的数量+1，任务完成，将任务队列中的任务数量-1。有点类似于java里面的CountDownLatch
+		//这个Batch用于检测redis请求是否完成（完成的标志是BackendConn调用了setRResponse）
 		r.Batch = &sync.WaitGroup{}
 		r.Database = s.database
 		r.UnixNano = start.UnixNano()
 
+		//将请求取出，然后根据不同的redis请求调用不同的方法，被调用的就是codis-server
 		if err := s.handleRequest(r, d); err != nil {
 			r.Resp = redis.NewErrorf("ERR handle request, %s", err)
 			tasks.PushBack(r)
@@ -196,6 +214,8 @@ func (s *Session) loopReader(tasks *RequestChan, d *Router) (err error) {
 	return nil
 }
 
+//LoopWriter的作用就是合并请求的处理结果并返回给客户端。请求结果由BackendConn处理好之后，放在Request这个struct的*redis.Resp
+//属性中，这里只需要把结果取出。可以看到，codis将请求与结果关联起来的方式，就是把结果当做request的一个属性
 func (s *Session) loopWriter(tasks *RequestChan) (err error) {
 	defer func() {
 		s.CloseWithError(err)
@@ -214,6 +234,8 @@ func (s *Session) loopWriter(tasks *RequestChan) (err error) {
 	p.MaxInterval = time.Millisecond
 	p.MaxBuffered = maxPipelineLen / 2
 
+	//前面我们在tasks.PushBack(r)中，将请求放入了data []*Request切片，现在就是取出最早的请求及其处理结果
+	//如果当前session的requestChan为空，就调用cond.wait让goroutine等待，直到调用pushback又放入请求为止
 	return tasks.PopFrontAll(func(r *Request) error {
 		resp, err := s.handleResponse(r)
 		if err != nil {
@@ -240,8 +262,13 @@ func (s *Session) loopWriter(tasks *RequestChan) (err error) {
 }
 
 func (s *Session) handleResponse(r *Request) (*redis.Resp, error) {
+	//goroutine都会一直阻塞到所有请求处理完之后，前面我们已经看到，向RequestChan中添加一个请求的时候
+	//request.Batch会加一，后面BackendConn调用setResponse，也就是完成处理的时候，又会调用Done方法减一
 	r.Batch.Wait()
+
+	//如果是单个的请求，例如SET，这里就为空了
 	if r.Coalesce != nil {
+		//如果是MSET这种请求，就需要调用之前自定义的Coalesce方法，将请求合并之后再返回
 		if err := r.Coalesce(); err != nil {
 			return nil, err
 		}
@@ -255,6 +282,7 @@ func (s *Session) handleResponse(r *Request) (*redis.Resp, error) {
 }
 
 func (s *Session) handleRequest(r *Request, d *Router) error {
+	//解析请求,opstr取决于具体的命令，比如说"SET"
 	opstr, flag, err := getOpInfo(r.Multi)
 	if err != nil {
 		return err
@@ -263,6 +291,7 @@ func (s *Session) handleRequest(r *Request, d *Router) error {
 	r.OpFlag = flag
 	r.Broken = &s.broken
 
+	//有些命令不支持，就会返回错误
 	if flag.IsNotAllowed() {
 		return fmt.Errorf("command '%s' is not allowed", opstr)
 	}
@@ -284,6 +313,7 @@ func (s *Session) handleRequest(r *Request, d *Router) error {
 
 	switch opstr {
 	case "SELECT":
+		//select db命令
 		return s.handleSelect(r)
 	case "PING":
 		return s.handleRequestPing(r, d)
@@ -396,6 +426,7 @@ func (s *Session) handleRequestMGet(r *Request, d *Router) error {
 	case nkeys == 1:
 		return d.dispatch(r)
 	}
+	//将一个Mset请求拆分成多个子set请求，分别dispatch
 	var sub = r.MakeSubRequest(nkeys)
 	for i := range sub {
 		sub[i].Multi = []*redis.Resp{
@@ -406,6 +437,7 @@ func (s *Session) handleRequestMGet(r *Request, d *Router) error {
 			return err
 		}
 	}
+	//对于类似mset的操作处理多个值的命令，通过Coalesce来合并请求结果
 	r.Coalesce = func() error {
 		var array = make([]*redis.Resp, len(sub))
 		for i := range sub {

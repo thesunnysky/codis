@@ -137,6 +137,8 @@ func (s *Router) isOnline() bool {
 	return s.online && !s.closed
 }
 
+//将某个request分发给各个具体的slot进行处理,  共有以下三个方法：
+//根据key进行转发
 func (s *Router) dispatch(r *Request) error {
 	hkey := getHashKey(r.Multi, r.OpStr)
 	var id = Hash(hkey) % MaxSlotNum
@@ -144,6 +146,7 @@ func (s *Router) dispatch(r *Request) error {
 	return slot.forward(r, hkey)
 }
 
+//将request发到指定slot
 func (s *Router) dispatchSlot(r *Request, id int) error {
 	if id < 0 || id >= MaxSlotNum {
 		return ErrInvalidSlotId
@@ -152,6 +155,7 @@ func (s *Router) dispatchSlot(r *Request, id int) error {
 	return slot.forward(r, nil)
 }
 
+//将request转发到指定的redis服务器地址，如果找不到就返回false
 func (s *Router) dispatchAddr(r *Request, addr string) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

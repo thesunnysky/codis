@@ -118,9 +118,12 @@ func (c *RequestChan) lockedPushBack(r *Request) int {
 	if c.closed {
 		panic("send on closed chan")
 	}
+	//RequestChan的waits不为0的时候（也就是在RequestChan上等待的request数量不为0时），唤醒一个在cond上等待的goroutine
+	//这里的意思是，如果向requestChan中放入了请求，就将一个在cond上等待取出的goroutine唤醒
 	if c.waits != 0 {
 		c.cond.Signal()
 	}
+	//将request添加到RequestChan的data []*Request切片中，用于记录处理过的请求。
 	c.data = append(c.data, r)
 	return len(c.data)
 }

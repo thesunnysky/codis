@@ -71,6 +71,9 @@ func (bc *BackendConn) IsConnected() bool {
 	return bc.state.Int64() == stateConnected
 }
 
+//请求放入BackendConn等待处理。如果request的sync.WaitGroup不为空，就加一，然后判断加一之后的值，如果加一之后couter为0，
+//那么所有阻塞在counter上的goroutine都会得到释放
+//将请求直接存入到BackendConn的chan *Request中，等待后续被取出并进行处理。
 func (bc *BackendConn) PushBack(r *Request) {
 	if r.Batch != nil {
 		r.Batch.Add(1)
