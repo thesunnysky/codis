@@ -17,6 +17,7 @@ import (
 	redigo "github.com/garyburd/redigo/redis"
 )
 
+//RedisClient结构，对于每台redis服务器，都会有多个连接，过期的连接将会被清除
 type Client struct {
 	conn redigo.Conn
 	Addr string
@@ -337,6 +338,7 @@ func NewPool(auth string, timeout time.Duration) *Pool {
 				case <-p.exit.C:
 					return
 				case <-ticker.C:
+					//每隔一分钟清理Pool中无效的Client
 					p.Cleanup()
 				}
 			}

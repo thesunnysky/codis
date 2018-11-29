@@ -29,8 +29,16 @@ type Topom struct {
 	mu sync.Mutex
 
 	xauth string
+	//初始化之后，这个属性中的信息可以在zk中看到，就像models.Proxy一样
+	//路径是/codis3/codis-wujiang/topom
 	model *models.Topom
+	//存储着zkClient以及product-name，Topom与zk交互都是通过这个store
 	store *models.Store
+
+	//缓存结构，如果缓存为空就通过store从zk中取出slot的信息并填充cache
+	//不是只有第一次启动的时候cache会为空，如果集群中的元素（server，slot等等）发生变化，
+	// 都会调用dirtyCache，将cache中的信息置为nil,这样下一次调用s.newContext()获取上下文信息获取
+	// 上下文信息的时候，就会通过Topom.store从zk中重新拉取
 	cache struct {
 		hooks list.List
 		slots []*models.SlotMapping
@@ -44,13 +52,19 @@ type Topom struct {
 		C chan struct{}
 	}
 
+	//与dashboard相关的所有配置信息
 	config *Config
 	online bool
 	closed bool
 
 	ladmin net.Listener
 
+	//槽进行迁移的时候使用
 	action struct {
+		//这个pool，其实就是map[string]*list.List，用于保存redis的结构，里面有addr,auth和Timeout。
+		//相当于缓存，需要的时候从这里取，否则就新建然后put进来
+		//键为redis服务器的地址，值为与这台服务器建立的连接，过期的连接会被删除
+		//timeout为配置文件dashboard.toml中的migration_timeout选项所配
 		redisp *redis.Pool
 
 		interval atomic2.Int64
@@ -59,16 +73,21 @@ type Topom struct {
 		progress struct {
 			status atomic.Value
 		}
+
+		//一个计数器，有一个slot等待迁移，就加一；执行一个slot的迁移，就减一
 		executor atomic2.Int64
 	}
 
+	//存储集群中redis和proxy详细信息，goroutine每次刷新redis和proxy之后，都会将结果存在这里
 	stats struct {
+		//timeout为5秒
 		redisp *redis.Pool
 
 		servers map[string]*RedisStats
 		proxies map[string]*ProxyStats
 	}
 
+	//这个在使用哨兵的时候会用到，存储在fe中配置的哨兵以及哨兵所监控的redis主服务器
 	ha struct {
 		redisp *redis.Pool
 
@@ -89,6 +108,7 @@ func New(client models.Client, config *Config) (*Topom, error) {
 	s := &Topom{}
 	s.config = config
 	s.exit.C = make(chan struct{})
+	//新建redis pool
 	s.action.redisp = redis.NewPool(config.ProductAuth, config.MigrationTimeout.Duration())
 	s.action.progress.status.Store("")
 
