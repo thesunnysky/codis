@@ -37,6 +37,7 @@ func NewClientNoAuth(addr string, timeout time.Duration) (*Client, error) {
 	return NewClient(addr, "", timeout)
 }
 
+//创建Redis客户端，使用了https://github.com/gomodule/redigo
 func NewClient(addr string, auth string, timeout time.Duration) (*Client, error) {
 	c, err := redigo.Dial("tcp", addr, []redigo.DialOption{
 		redigo.DialConnectTimeout(math2.MinDuration(time.Second, timeout)),
@@ -266,6 +267,7 @@ func (c *Client) MigrateSlotAsync(slot int, target string, option *MigrateSlotAs
 	}
 }
 
+//获取槽的信息，并且将server挂到当前group下
 func (c *Client) SlotsInfo() (map[int]int, error) {
 	if reply, err := c.Do("SLOTSINFO"); err != nil {
 		return nil, errors.Trace(err)

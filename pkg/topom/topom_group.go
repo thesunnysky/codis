@@ -101,9 +101,13 @@ func (s *Topom) ResyncGroupAll() error {
 	return nil
 }
 
+//将server挂在group下，addr是codis-server的地址
+//gid: groupId;
+//dc: datacenter
 func (s *Topom) GroupAddServer(gid int, dc, addr string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	//重新填充上下文中的cache，如果cache为空，就从store中读出填入cache
 	ctx, err := s.newContext()
 	if err != nil {
 		return err
@@ -113,6 +117,7 @@ func (s *Topom) GroupAddServer(gid int, dc, addr string) error {
 		return errors.Errorf("invalid server address")
 	}
 
+	//同一group下重复添加server的校验
 	for _, g := range ctx.group {
 		for _, x := range g.Servers {
 			if x.Addr == addr {
@@ -121,6 +126,7 @@ func (s *Topom) GroupAddServer(gid int, dc, addr string) error {
 		}
 	}
 
+	//从上下文中根据gid取出group的详细信息
 	g, err := ctx.getGroup(gid)
 	if err != nil {
 		return err
@@ -138,7 +144,9 @@ func (s *Topom) GroupAddServer(gid int, dc, addr string) error {
 	}
 	defer s.dirtyGroupCache(g.Id)
 
+	//将新增的codis-server地址追加到当前group的Servers属性后面
 	g.Servers = append(g.Servers, &models.GroupServer{Addr: addr, DataCenter: dc})
+	//更新zk路径，/codis3/codis-wujiang/group/group-0001下面的文件内容
 	return s.storeUpdateGroup(g)
 }
 
@@ -448,14 +456,17 @@ func (s *Topom) EnableReplicaGroupsAll(value bool) error {
 	return nil
 }
 
+//添加从codis-server的时候用
 func (s *Topom) SyncCreateAction(addr string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	//此时的上下文的group属性中的Servers已经初始化某些/pkg/models.GroupServer结构
 	ctx, err := s.newContext()
 	if err != nil {
 		return err
 	}
 
+	//遍历上下文的group属性的Server，如果地址与传入的addr匹配，就可以找到对应的Group g
 	g, index, err := ctx.getGroupByServer(addr)
 	if err != nil {
 		return err
@@ -469,8 +480,10 @@ func (s *Topom) SyncCreateAction(addr string) error {
 	}
 	defer s.dirtyGroupCache(g.Id)
 
+	//遍历g中的每个Server的Action.Index，取最大值加一赋值给新增的这个Server
 	g.Servers[index].Action.Index = ctx.maxSyncActionIndex() + 1
 	g.Servers[index].Action.State = models.ActionPending
+	//更新zk路径
 	return s.storeUpdateGroup(g)
 }
 

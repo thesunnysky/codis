@@ -50,10 +50,12 @@ func (s *Topom) ProcessSlotAction() error {
 			return nil
 		}
 		var fut sync2.Future
+		//取出plans，对每个slot进行处理
 		for sid, _ := range plans {
 			fut.Add()
 			go func(sid int) {
 				log.Warnf("slot-[%d] process action", sid)
+				//针对每个slot做处理
 				var err = s.processSlotAction(sid)
 				if err != nil {
 					status := fmt.Sprintf("[ERROR] Slot[%04d]: %s", sid, err)
@@ -61,6 +63,7 @@ func (s *Topom) ProcessSlotAction() error {
 				} else {
 					s.action.progress.status.Store("")
 				}
+				//在Future的vmap中存储slotId和对应的error，并调用WaitGroup.Done
 				fut.Done(strconv.Itoa(sid), err)
 			}(sid)
 		}
@@ -77,6 +80,7 @@ func (s *Topom) ProcessSlotAction() error {
 func (s *Topom) processSlotAction(sid int) error {
 	var db int = 0
 	for s.IsOnline() {
+		//返回的exec就是具体的slot操作执行函数
 		if exec, err := s.newSlotActionExecutor(sid); err != nil {
 			return err
 		} else if exec == nil {

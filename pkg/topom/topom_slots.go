@@ -363,6 +363,7 @@ func (s *Topom) newSlotActionExecutor(sid int) (func(db int) (remains int, nextd
 		return nil, err
 	}
 
+	//根据slot的id获取SlotMapping，主要方法就是return ctx.slots[sid], nil
 	m, err := ctx.getSlotMapping(sid)
 	if err != nil {
 		return nil, err
@@ -544,9 +545,12 @@ func (s *Topom) SlotsAssignOffline(slots []*models.SlotMapping) error {
 	return s.resyncSlotMappings(ctx, slots...)
 }
 
+//第一次进入的时候传入的confirm是false，因为只是指定rebalance的plan。
+// 当页面上弹窗问是否迁移的时候，点了OK，又会进入这个方法，传入confirm为true
 func (s *Topom) SlotsRebalance(confirm bool) (map[int]int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	//获取上下文
 	ctx, err := s.newContext()
 	if err != nil {
 		return nil, err
@@ -558,6 +562,7 @@ func (s *Topom) SlotsRebalance(confirm bool) (map[int]int, error) {
 			groupIds = append(groupIds, g.Id)
 		}
 	}
+	//升序排序，结果是[1,2]
 	sort.Ints(groupIds)
 
 	if len(groupIds) == 0 {
@@ -565,16 +570,22 @@ func (s *Topom) SlotsRebalance(confirm bool) (map[int]int, error) {
 	}
 
 	var (
+		//已分配好，不需要再迁移的，键是groupId，值是当前group不需迁移的slot的数量
 		assigned = make(map[int]int)
+		//等待分配的，键是groupId，值是当前group等待分配的slot的id组成的切片
 		pendings = make(map[int][]int)
+		//可以迁出的，键是groupId，值是当前group可以迁出的slot的数量。如果是负数，就表明当前group需要迁入多少个slot
 		moveout  = make(map[int]int)
+		//确定要迁移的slot，int切片，每个元素就是确定要迁移的slot的id
 		docking  []int
 	)
+	//计算某个group中槽的数量的方法，固定属于该组的，加上待分配的，再减去要迁移出去的
 	var groupSize = func(gid int) int {
 		return assigned[gid] + len(pendings[gid]) - moveout[gid]
 	}
 
 	// don't migrate slot if it's being migrated
+	//如果槽的Action.State等于空字符串，才可以迁移。否则不能迁移
 	for _, m := range ctx.slots {
 		if m.Action.State != models.ActionNothing {
 			assigned[m.Action.TargetId]++
@@ -592,11 +603,13 @@ func (s *Topom) SlotsRebalance(confirm bool) (map[int]int, error) {
 			if groupSize(m.GroupId) < lowerBound {
 				assigned[m.GroupId]++
 			} else {
+				//表示当前槽可以等待分配
 				pendings[m.GroupId] = append(pendings[m.GroupId], m.Id)
 			}
 		}
 	}
 
+	//传入一个自定义的比较器，新建红黑树。这个比较器的结果是，红黑树中左边的节点的group size小于右边的
 	var tree = rbtree.NewWith(func(x, y interface{}) int {
 		var gid1 = x.(int)
 		var gid2 = y.(int)
@@ -612,6 +625,8 @@ func (s *Topom) SlotsRebalance(confirm bool) (map[int]int, error) {
 		tree.Put(gid, nil)
 	}
 
+	//将不属于任何group和Action.State为""的slot（被称为offline的slot，初始阶段所有slot都是offline的），
+	// 分配给目前size最小的group
 	// assign offline slots to the smallest group
 	for _, m := range ctx.slots {
 		if m.Action.State != models.ActionNothing {
@@ -620,9 +635,11 @@ func (s *Topom) SlotsRebalance(confirm bool) (map[int]int, error) {
 		if m.GroupId != 0 {
 			continue
 		}
+		//得到整个树最左边节点的键，也就是size最小的group的id
 		dest := tree.Left().Key.(int)
 		tree.Remove(dest)
 
+		//当前节点要进行迁移
 		docking = append(docking, m.Id)
 		moveout[dest]--
 
@@ -632,7 +649,10 @@ func (s *Topom) SlotsRebalance(confirm bool) (map[int]int, error) {
 	var upperBound = (MaxSlotNum + len(groupIds) - 1) / len(groupIds)
 
 	// rebalance between different server groups
+	// 当集群中group的数量大于2（上限是9999），红黑树的rebalance。在group size差距最大的两个组之间做迁移准备工作
+	//from和dest分别是红黑树最左和最右的两个group，换句话说，slot之间的补给传递，都是先比较当前groupsize最大的和最小的组
 	for tree.Size() >= 2 {
+		//group size最大的groupId
 		from := tree.Right().Key.(int)
 		tree.Remove(from)
 
@@ -691,6 +711,7 @@ func (s *Topom) SlotsRebalance(confirm bool) (map[int]int, error) {
 		return plans, nil
 	}
 
+	//只有弹窗点击OK，方法才会走到这里。现在开始执行plan中的规划
 	var slotIds []int
 	for sid, _ := range plans {
 		slotIds = append(slotIds, sid)
