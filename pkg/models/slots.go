@@ -16,8 +16,12 @@ type Slot struct {
 	Id     int  `json:"id"`
 	Locked bool `json:"locked,omitempty"`
 
+	//slot所在的codis-server的地址
 	BackendAddr        string `json:"backend_addr,omitempty"`
+	// group id?
 	BackendAddrGroupId int    `json:"backend_addr_group_id,omitempty"`
+
+	//slot迁移相关
 	MigrateFrom        string `json:"migrate_from,omitempty"`
 	MigrateFromGroupId int    `json:"migrate_from_group_id,omitempty"`
 

@@ -100,6 +100,7 @@ var (
 	ErrInvalidMethod = errors.New("use of invalid forwarder method")
 )
 
+//Router 调用用来fillSlot
 func (s *Router) FillSlot(m *models.Slot) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -170,18 +171,23 @@ func (s *Router) dispatchAddr(r *Request, addr string) bool {
 	return false
 }
 
+//Important
 func (s *Router) fillSlot(m *models.Slot, switched bool, method forwardMethod) {
 	slot := &s.slots[m.Id]
 	slot.blockAndWait()
 
+	//清空models.Slot里面的backendConn
 	slot.backend.bc.Release()
+	//for gc
 	slot.backend.bc = nil
 	slot.backend.id = 0
 	slot.migrate.bc.Release()
+	//for gc
 	slot.migrate.bc = nil
 	slot.migrate.id = 0
 	for i := range slot.replicaGroups {
 		for _, bc := range slot.replicaGroups[i] {
+			//clear replica groups backendConn
 			bc.Release()
 		}
 	}
@@ -189,10 +195,12 @@ func (s *Router) fillSlot(m *models.Slot, switched bool, method forwardMethod) {
 
 	slot.switched = switched
 
+	//set slot.backend.bc
 	if addr := m.BackendAddr; len(addr) != 0 {
 		slot.backend.bc = s.pool.primary.Retain(addr)
 		slot.backend.id = m.BackendAddrGroupId
 	}
+	//set slot.migrate.bc
 	if from := m.MigrateFrom; len(from) != 0 {
 		slot.migrate.bc = s.pool.primary.Retain(from)
 		slot.migrate.id = m.MigrateFromGroupId
@@ -218,6 +226,7 @@ func (s *Router) fillSlot(m *models.Slot, switched bool, method forwardMethod) {
 	}
 	if !s.closed {
 		if slot.migrate.bc != nil {
+			//switched is always false
 			if switched {
 				log.Warnf("fill slot %04d, backend.addr = %s, migrate.from = %s, locked = %t, +switched",
 					slot.id, slot.backend.bc.Addr(), slot.migrate.bc.Addr(), slot.lock.hold)

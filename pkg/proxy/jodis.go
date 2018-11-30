@@ -112,11 +112,14 @@ func (j *Jodis) Start() {
 			Unit: time.Second,
 		}
 		for !j.IsClosed() {
+			//这一步在zk中创建临时节点/jodis/codis-wujiang/proxy-token，并添加监听事件，监听该节点中内容的改变。
+			//最终返回的w是一个chan struct{}。具体实现方法在下面的watch中
 			w, err := j.Rewatch()
 			if err != nil {
 				log.WarnErrorf(err, "jodis watch node %s failed", j.path)
 				delay.SleepWithCancel(j.IsClosed)
 			} else {
+				//从w中读出zk下的变化
 				<-w
 				delay.Reset()
 			}

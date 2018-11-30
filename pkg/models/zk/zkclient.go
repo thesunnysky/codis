@@ -250,6 +250,7 @@ func (c *Client) create(conn *zk.Conn, path string, data []byte, flag int32) (st
 }
 
 func (c *Client) watch(conn *zk.Conn, path string) (<-chan struct{}, error) {
+	//GetW的核心方法就是下面的addWatcher，w就是addWatcher返回的ch
 	_, _, w, err := conn.GetW(path)
 	if err != nil {
 		return nil, errors.Trace(err)

@@ -78,6 +78,7 @@ func newApiServer(p *Proxy) http.Handler {
 		r.Put("/forcegc/:xauth", api.ForceGC)
 		r.Put("/shutdown/:xauth", api.Shutdown)
 		r.Put("/loglevel/:xauth/:value", api.LogLevel)
+		//the api of proxy to fill slots
 		r.Put("/fillslots/:xauth", binding.Json([]*models.Slot{}), api.FillSlots)
 		r.Put("/sentinels/:xauth", binding.Json(models.Sentinel{}), api.SetSentinels)
 		r.Put("/sentinels/:xauth/rewatch", api.RewatchSentinels)
@@ -206,10 +207,12 @@ func (s *apiServer) Shutdown(params martini.Params) (int, string) {
 	}
 }
 
+//the proxy FillSlots api method
 func (s *apiServer) FillSlots(slots []*models.Slot, params martini.Params) (int, string) {
 	if err := s.verifyXAuth(params); err != nil {
 		return rpc.ApiResponseError(err)
 	}
+	//fill slots
 	if err := s.proxy.FillSlots(slots); err != nil {
 		return rpc.ApiResponseError(err)
 	}
@@ -328,6 +331,7 @@ func (c *ApiClient) Shutdown() error {
 	return rpc.ApiPutJson(url, nil, nil)
 }
 
+//通过调用Proxy的Api来FIllSlots
 func (c *ApiClient) FillSlots(slots ...*models.Slot) error {
 	url := c.encodeURL("/api/proxy/fillslots/%s", c.xauth)
 	return rpc.ApiPutJson(url, slots, nil)

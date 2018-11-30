@@ -236,6 +236,7 @@ func (s *Topom) Start(routines bool) error {
 	go func() {
 		for !s.IsClosed() {
 			if s.IsOnline() {
+				//启动goroutine来刷新proxy的状态，当集群中新增了proxy之后，刷新状态
 				w, _ := s.RefreshProxyStats(time.Second)
 				if w != nil {
 					w.Wait()

@@ -17,6 +17,7 @@ import (
 
 const MaxSlotNum = models.MaxSlotNum
 
+//上下文中存储了当前集群的slots、group、proxy、sentinels等信息
 type context struct {
 	slots []*models.SlotMapping
 	group map[int]*models.Group
@@ -167,6 +168,7 @@ func (ctx *context) toReplicaGroups(gid int, p *models.Proxy) [][]string {
 	return replicas
 }
 
+//根据models.SlotMapping来创建1024个models.Slot
 func (ctx *context) toSlotSlice(slots []*models.SlotMapping, p *models.Proxy) []*models.Slot {
 	var slice = make([]*models.Slot, len(slots))
 	for i, m := range slots {

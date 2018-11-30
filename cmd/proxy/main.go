@@ -28,6 +28,14 @@ import (
 	"github.com/thesunnysky/codis/pkg/utils/math2"
 )
 
+// Proxy启动：
+// 总结一下，proxy启动之后，一直处于waiting的状态，直到将proxy添加到集群。首先对要添加的proxy做参数校验，
+// 根据proxy addr获取一个ApiClient，更新zk中有关于这个proxy的信息。接下来，从上下文中获取ctx.slots，
+// 也就是[]*models.SlotMapping，创建1024个models.Slot，再填充1024个pkg/proxy/slots.go中的Slot，
+// 此过程中Router为每个Slot都分配了对应的backendConn。
+// 下一步，将Proxy自身，和它的router和jodis设为上线，在zk中创建临时节点/jodis/codis-productName/proxy-token，
+// 并监听该节点的变化，如果有变化从相应的channel中读出值。启动dashboard的时候，有一个goroutine专门负责刷新proxy状态，
+// 将每一个proxy.Token和ProxyStats的关系map对应起来，存入Topom.stats.proxies中。
 func main() {
 	const usage = `
 Usage:
@@ -208,7 +216,11 @@ Options:
 		}
 	}
 
-	//感觉有用
+	//手动kill一个proxy的进程，发现集群上显示该proxy为红色error，但是其实这个proxy并没有被踢出集群ctx。
+	//可能有人会问，如果一个proxy挂了，codis是怎么知道不要把请求发到这个proxy的呢？其实，当下面几种情况，
+	//都会调用proxy.close方法，这个里面调用了Jodis的close方法，将zk上面的该proxy信息删除。
+	// jodis客户端是通过zk转发的，自然就不会把请求发到这个proxy上了
+	// see also: Proxy.serveAdmin(), Proxy.serveProxy()
 	go func() {
 		defer s.Close()
 		c := make(chan os.Signal, 1)
@@ -318,10 +330,12 @@ func AutoOnlineWithCoordinator(p *proxy.Proxy, name, addr, auth string) {
 	log.Panicf("online proxy failed")
 }
 
+//proxy fill slots之后proxy的状态就会变成online
 func AutoOnlineWithFillSlots(p *proxy.Proxy, slots []*models.Slot) {
 	if err := p.FillSlots(slots); err != nil {
 		log.PanicErrorf(err, "fill slots failed")
 	}
+	//start proxy and the state of proxy switched to "online"
 	if err := p.Start(); err != nil {
 		log.PanicErrorf(err, "start proxy failed")
 	}

@@ -184,9 +184,11 @@ func (s *Proxy) Start() error {
 	if s.online {
 		return nil
 	}
+	//proxy online
 	s.online = true
 	s.router.Start()
 	if s.jodis != nil {
+		//jodis start()
 		s.jodis.Start()
 	}
 	return nil
@@ -255,6 +257,7 @@ func (s *Proxy) Slots() []*models.Slot {
 	return s.router.GetSlots()
 }
 
+//fill one slot
 func (s *Proxy) FillSlot(m *models.Slot) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -264,6 +267,7 @@ func (s *Proxy) FillSlot(m *models.Slot) error {
 	return s.router.FillSlot(m)
 }
 
+//fill 多个slot
 func (s *Proxy) FillSlots(slots []*models.Slot) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

@@ -11,6 +11,7 @@ import (
 	"github.com/thesunnysky/codis/pkg/utils/sync2"
 )
 
+//传入的addr就是proxy的地址
 func (s *Topom) CreateProxy(addr string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -19,22 +20,29 @@ func (s *Topom) CreateProxy(addr string) error {
 		return err
 	}
 
+	//这里的p就是根据proxy地址取出models.proxy，也就是/codis3/codis-wujiang/proxy路径下面的那个proxy-token中的详细信息
 	p, err := proxy.NewApiClient(addr).Model()
 	if err != nil {
 		return errors.Errorf("proxy@%s fetch model failed, %s", addr, err)
 	}
+	//这个ApiClient中存储了proxy的地址，以及根据productName,productAuth(默认为空)以及token生成的auth
 	c := s.newProxyClient(p)
 
+	//之前我们说过，proxy启动的时候，在s.setup(config)这一步，会生成一个xauth，存储在Proxy的xauth属性中，这一步就是讲上面得到
+	//的xauth和启动proxy时的xauth作比较，来唯一确定需要的xauth
 	if err := c.XPing(); err != nil {
 		return errors.Errorf("proxy@%s check xauth failed, %s", addr, err)
 	}
+	//检查上下文中的proxy是否已经有token，如果有的话，说明这个proxy已经添加到集群了
 	if ctx.proxy[p.Token] != nil {
 		return errors.Errorf("proxy-[%s] already exists", p.Token)
 	} else {
+		//上下文中所有proxy的最大id+1，赋给当前的proxy作为其id
 		p.Id = ctx.maxProxyId() + 1
 	}
 	defer s.dirtyProxyCache(p.Token)
 
+	//到这一步，proxy已经添加成功，更新"/codis3/codis-wujiang/proxy/proxy-token"下面的proxy信息
 	if err := s.storeCreateProxy(p); err != nil {
 		return err
 	} else {
@@ -119,12 +127,14 @@ func (s *Topom) ReinitProxy(token string) error {
 
 func (s *Topom) newProxyClient(p *models.Proxy) *proxy.ApiClient {
 	c := proxy.NewApiClient(p.AdminAddr)
+	//根据信息设置Client的XAUTH,需要和Proxy启动的时候设置的XAUTH相同
 	c.SetXAuth(s.config.ProductName, s.config.ProductAuth, p.Token)
 	return c
 }
 
 func (s *Topom) reinitProxy(ctx *context, p *models.Proxy, c *proxy.ApiClient) error {
 	log.Warnf("proxy-[%s] reinit:\n%s", p.Token, p.Encode())
+	//初始化1024个槽,
 	if err := c.FillSlots(ctx.toSlotSlice(ctx.slots, p)...); err != nil {
 		log.ErrorErrorf(err, "proxy-[%s] fillslots failed", p.Token)
 		return errors.Errorf("proxy-[%s] fillslots failed", p.Token)
