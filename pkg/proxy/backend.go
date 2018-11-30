@@ -1,13 +1,14 @@
 // Copyright 2016 CodisLabs. All Rights Reserved.
 // Licensed under the MIT (MIT-LICENSE.txt) license.
 
-//这个过程中对于channel的使用方式是值得读者学习的。分为如下几个步骤：proxy的router负责将收到的请求写到bc.input；
+// 这个过程中对于channel的使用方式是值得读者学习的。分为如下几个步骤：proxy的router负责将收到的请求写到bc.input；
 // newBackendReader创建一个名为task的channel，启动一个goroutine loopReader循环读出task的内容作处理，newBackendReader
 // 立即返回创建好的task给主线程loopwriter。主线程loopwriter中bc.input循环读出内容写入task。并且loopwuiter和loopReader
 // 都做了range channel过程中因为异常退出的处理
 
-//总结一下，backendConn负责实际对redis请求进行处理。在fillSlot的时候，主要目的就是给slot填充backend.bc(实际上是sharedBackendConn)。
-//从models.slot得到BackendAddr和MigrateFrom的地址addr，根据这个addr，首先从proxy.Router的primary sharedBackendConnPool
+// 总结一下，backendConn负责实际对redis(codis-server)请求进行处理。
+// 在fillSlot的时候，主要目的就是给slot填充backend.bc(实际上是sharedBackendConn)。
+// 从models.slot得到BackendAddr和MigrateFrom的地址addr，根据这个addr，首先从proxy.Router的primary sharedBackendConnPool
 // 中取sharedBackendConn，如果没有获取到，就新建sharedBackendConn再放回sharedBackendConnPool。创建sharedBackendConn
 // 的过程中启动了两个goroutine，分别是loopWriter和loopReader，loopWriter负责从backendConn.input中取出请求并发送，loopReader
 // 负责遍历所有请求，从redis.Conn中解码得到resp并设置为相关的请求的属性，这样每一个请求及其结果就关联起来了。
@@ -39,7 +40,7 @@ type BackendConn struct {
 	stop sync.Once
 	addr string
 
-	//size为1024的channel
+	//size为1024的request channel,用来缓存对redis的请求
 	input chan *Request
 	retry struct {
 		fails int
@@ -292,6 +293,7 @@ var (
 	errRespLoading    = []byte("LOADING")
 )
 
+//读取task中的请求，并将处理结果与之对应关联
 func (bc *BackendConn) loopReader(tasks <-chan *Request, c *redis.Conn, round int) (err error) {
 	//从连接中取完所有请求并setResponse之后，连接就会关闭
 	defer func() {
@@ -304,11 +306,15 @@ func (bc *BackendConn) loopReader(tasks <-chan *Request, c *redis.Conn, round in
 	}()
 	//遍历tasks，此时的r是所有的请求
 	for r := range tasks {
-		//从redis.Conn中解码得到处理结果
+		//从redis.Conn中解码得到处理结果,Decode()将获取的是所有conn处理的命令的请求结果（单条命令或者
+		//multi）,循环的调用c.Decode()方法将依次的取出它所处理的命令的结果
+		//? 如何保证在读取数据的时候所有命令都已经处理完成了呢？
 		resp, err := c.Decode()
+		//error
 		if err != nil {
 			return bc.setResponse(r, nil, fmt.Errorf("backend conn failure, %s", err))
 		}
+		//error
 		if resp != nil && resp.IsError() {
 			switch {
 			case bytes.HasPrefix(resp.Value, errRespMasterDown):
@@ -323,7 +329,7 @@ func (bc *BackendConn) loopReader(tasks <-chan *Request, c *redis.Conn, round in
 				}
 			}
 		}
-		//请求结果设置为请求的属性
+		//Set the "Response" of Request to Request.Resp
 		bc.setResponse(r, resp, nil)
 	}
 	return nil
@@ -353,12 +359,18 @@ func (bc *BackendConn) loopWriter(round int) (err error) {
 	defer func() {
 		for i := len(bc.input); i != 0; i-- {
 			r := <-bc.input
+			//将尚未的处理的request.Resp置为nil
 			bc.setResponse(r, nil, ErrBackendConnReset)
 		}
 		log.WarnErrorf(err, "backend conn [%p] to %s, db-%d writer-[%d] exit",
 			bc, bc.addr, bc.database, round)
 	}()
-	//这个方法内启动了loopReader
+	// 创建与codis-server的连接，并启动loopReader
+	// tasks chan 用来记录所有向codis-server发送的请求
+	// 从backendConn.input中获取所有的request，然后encode request，将encode后的request发送给
+	// codis-server，然后在将发送的request放入task chan中,然后等待loopReader会按照task中request
+	// 的顺序将请求的返回结果和request匹配
+	// ?每次都要创建新的连接吗？
 	c, tasks, err := bc.newBackendReader(round, bc.config)
 	if err != nil {
 		return err
@@ -381,14 +393,17 @@ func (bc *BackendConn) loopWriter(round int) (err error) {
 			bc.setResponse(r, nil, ErrRequestIsBroken)
 			continue
 		}
-		//将请求取出并发送给codis-server
+		//encode request,将所有的request一次性encode完
 		if err := p.EncodeMultiBulk(r.Multi); err != nil {
 			return bc.setResponse(r, nil, fmt.Errorf("backend conn failure, %s", err))
 		}
+		// len(ba.input) == 0,表明所有的request都已经encode完了，此时可以开始起 force flush
+		// Flush将请求的内容发送给codis-server
 		if err := p.Flush(len(bc.input) == 0); err != nil {
 			return bc.setResponse(r, nil, fmt.Errorf("backend conn failure, %s", err))
 		} else {
-			//所有请求写入tasks这个channel
+			//将发送给codis-server的请求写入tasks这个channel,等待请求返回后loopReader()会按照
+			//task中request的顺序将请求的返回结果和request匹配
 			tasks <- r
 		}
 	}

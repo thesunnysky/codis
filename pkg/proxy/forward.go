@@ -45,7 +45,7 @@ func (d *forwardSync) Forward(s *Slot, r *Request, hkey []byte) error {
 	if err != nil {
 		return err
 	}
-	//请求放入BackendConn等待处理
+	//将Request放入BackendConn等待处理
 	bc.PushBack(r)
 	return nil
 }

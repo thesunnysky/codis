@@ -1,6 +1,8 @@
 // Copyright 2016 CodisLabs. All Rights Reserved.
 // Licensed under the MIT (MIT-LICENSE.txt) license.
 
+// 封装了redis client的功能，通过redisgo实现了和后端proxy之间的连接
+// 同时该文件也实现了redis的各操作命令
 package redis
 
 import (
@@ -19,6 +21,7 @@ import (
 
 //RedisClient结构，对于每台redis服务器，都会有多个连接，过期的连接将会被清除
 type Client struct {
+	//使用redisgo客户端连接codis-server
 	conn redigo.Conn
 	Addr string
 	Auth string
@@ -69,6 +72,7 @@ func (c *Client) isRecyclable() bool {
 	return true
 }
 
+// send cmd to codis-server
 func (c *Client) Do(cmd string, args ...interface{}) (interface{}, error) {
 	r, err := c.conn.Do(cmd, args...)
 	if err != nil {

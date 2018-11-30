@@ -116,7 +116,7 @@ var (
 )
 
 var RespOK = redis.NewString([]byte("OK"))
-
+// session start方法
 func (s *Session) Start(d *Router) {
 	s.start.Do(func() {
 		//检查active的session数量是否超过了ProxyMaxClients

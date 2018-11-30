@@ -12,6 +12,7 @@ import (
 	"github.com/thesunnysky/codis/pkg/utils/unsafe2"
 )
 
+//?
 type Conn struct {
 	Sock net.Conn
 
@@ -192,6 +193,7 @@ func (p *FlushEncoder) Encode(resp *Resp) error {
 }
 
 func (p *FlushEncoder) EncodeMultiBulk(multi []*Resp) error {
+	//encode (multi) request data
 	if err := p.Conn.EncodeMultiBulk(multi, false); err != nil {
 		return err
 	} else {

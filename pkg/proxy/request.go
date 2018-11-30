@@ -11,7 +11,9 @@ import (
 	"github.com/thesunnysky/codis/pkg/utils/sync2/atomic2"
 )
 
+//Request和对应的Response存放在同一个struct中
 type Request struct {
+	//用来存放multi request的 multi response
 	Multi []*redis.Resp
 	Batch *sync.WaitGroup
 	Group *sync.WaitGroup
@@ -24,6 +26,7 @@ type Request struct {
 	Database int32
 	UnixNano int64
 
+	//用来存放request的response
 	*redis.Resp
 	Err error
 
