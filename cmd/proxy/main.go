@@ -192,7 +192,7 @@ Options:
 		log.Warnf("option --session_auth = %s", s)
 	}
 
-	//启动proxy
+	// ====> 启动proxy
 	s, err := proxy.New(config)
 	if err != nil {
 		log.PanicErrorf(err, "create proxy with config file failed\n%s", config)

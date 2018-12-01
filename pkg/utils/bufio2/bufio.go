@@ -209,6 +209,8 @@ func (b *Writer) flush() error {
 	if b.wpos == 0 {
 		return nil
 	}
+	//对于proxy的FlushEncoder来说，这里调用的是redis.connWriter.Write()
+	//进一步调用的是 redis.Conn.Sock(net.conn)的Write
 	n, err := b.wr.Write(b.buf[:b.wpos])
 	if err != nil {
 		b.err = err

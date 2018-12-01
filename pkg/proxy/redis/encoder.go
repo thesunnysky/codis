@@ -3,6 +3,7 @@
 
 package redis
 
+//用来encode发往codis-server的请求
 import (
 	"bytes"
 	"io"

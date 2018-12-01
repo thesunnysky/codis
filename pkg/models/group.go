@@ -1,6 +1,7 @@
 // Copyright 2016 CodisLabs. All Rights Reserved.
 // Licensed under the MIT (MIT-LICENSE.txt) license.
 
+// codis会对codis-server进行分祖，一个RedisGroup里有一个Master，和多个Slave，
 package models
 
 const MaxGroupId = 9999

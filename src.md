@@ -17,8 +17,17 @@
 ### proxy
 
 1. proxy router 的填充；
-2. proxy 健康状态的监控；
-3. proxy router信息的更新；
+
+2. proxy slot 的填充；
+
+3. proxy 和session的关系； -> 完整的请求流程是什么样子的？
+
+   proxy -> new session
+
+**P1**
+
+1. proxy 健康状态的监控；
+2. proxy router信息的更新；
 
 ### 数据迁移
 

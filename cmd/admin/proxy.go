@@ -1,6 +1,7 @@
 // Copyright 2016 CodisLabs. All Rights Reserved.
 // Licensed under the MIT (MIT-LICENSE.txt) license.
 
+// 封装了读Proxy api的调用，内部通过创建一个 Proxy ApiClient 来调用proxy提供的api
 package main
 
 import (
@@ -42,6 +43,7 @@ func (t *cmdProxy) Main(d map[string]interface{}) {
 }
 
 func (t *cmdProxy) newProxyClient(xauth bool) *proxy.ApiClient {
+	//create a new proxy api client
 	c := proxy.NewApiClient(t.addr)
 
 	if !xauth {
@@ -108,6 +110,7 @@ func (t *cmdProxy) handleStart(d map[string]interface{}) {
 	c := t.newProxyClient(true)
 
 	log.Debugf("call rpc start to proxy %s", t.addr)
+	//start proxy
 	if err := c.Start(); err != nil {
 		log.PanicErrorf(err, "call rpc start to proxy %s failed", t.addr)
 	}
@@ -157,6 +160,7 @@ func (t *cmdProxy) handleFillSlots(d map[string]interface{}) {
 	}
 
 	log.Debugf("call rpc fillslots to proxy %s", t.addr)
+	// => fill slots
 	if err := c.FillSlots(slots...); err != nil {
 		log.PanicErrorf(err, "call rpc fillslots to proxy %s failed", t.addr)
 	}

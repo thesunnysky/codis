@@ -15,6 +15,7 @@ import (
 type Request struct {
 	//用来存放multi request的 multi response
 	Multi []*redis.Resp
+	//这个Batch用于检测redis请求是否完成（完成的标志是BackendConn调用了setResponse）
 	Batch *sync.WaitGroup
 	Group *sync.WaitGroup
 

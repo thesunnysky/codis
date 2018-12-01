@@ -244,6 +244,7 @@ type ApiClient struct {
 	xauth string
 }
 
+//create a new Proxy Api Client
 func NewApiClient(addr string) *ApiClient {
 	return &ApiClient{addr: addr}
 }

@@ -68,6 +68,7 @@ type Proxy struct {
 
 var ErrClosedProxy = errors.New("use of closed proxy")
 
+// ==> 启动proxy的入口, 在cmd/proxy/main.go中调用来启动proxy
 func New(config *Config) (*Proxy, error) {
 	if err := config.Validate(); err != nil {
 		return nil, errors.Trace(err)

@@ -32,6 +32,7 @@ func (t RespType) String() string {
 	}
 }
 
+// 用来封装proxy -> codis-server 的Request和Response
 type Resp struct {
 	Type RespType
 

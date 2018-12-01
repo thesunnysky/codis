@@ -3,6 +3,10 @@
 
 package redis
 
+// 用来decode codis-server返回的信息, 在proxy的conn和codis-server交互之间有encode和decode一层，
+// 这里的decode不是指而类似于redis-cli的那种完整的解析出redis的响应信息（按照redis的协议）
+// 而是由于proxy向codis-server发送请求的时候可能是批量发送的，但是proxy在返回给客户端的时候需要将
+// 批量的响应解析出来对应客户端具体的某一次请求，
 import (
 	"bytes"
 	"io"

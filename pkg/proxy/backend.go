@@ -194,7 +194,7 @@ func (bc *BackendConn) newBackendReader(round int, config *Config) (*redis.Conn,
 	}
 
 	tasks := make(chan *Request, config.BackendMaxPipeline)
-	//读取task中的请求，并将处理结果与之对应关联
+	//启动一个goroutine来处理该task chan中的请求，读取task中的请求，并将处理结果与之对应关联
 	go bc.loopReader(tasks, c, round)
 
 	return c, tasks, nil
@@ -264,6 +264,7 @@ func (bc *BackendConn) setResponse(r *Request, resp *redis.Resp, err error) erro
 		r.Group.Done()
 	}
 	if r.Batch != nil {
+		//标识当前的request已经处理完成了
 		r.Batch.Done()
 	}
 	return err
@@ -354,6 +355,7 @@ func (bc *BackendConn) delayBeforeRetry() {
 	}
 }
 
+// 循环的从input chan中取出Request来，encode request然后通过conn将请求发往codis-server
 func (bc *BackendConn) loopWriter(round int) (err error) {
 	//如果因为某种原因退出，还有input没来得及处理，就返回错误
 	defer func() {

@@ -33,6 +33,7 @@ func DialTimeout(addr string, timeout time.Duration, rbuf, wbuf int) (*Conn, err
 	return NewConn(c, rbuf, wbuf), nil
 }
 
+//redis.Conn的Decoder和Encoder是如何和net.Socket的Reader和Writer结合在一起的？
 func NewConn(sock net.Conn, rbuf, wbuf int) *Conn {
 	conn := &Conn{Sock: sock}
 	conn.Decoder = newConnDecoder(conn, rbuf)
