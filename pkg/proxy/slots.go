@@ -25,6 +25,7 @@ type Slot struct {
 	}
 	replicaGroups [][]*sharedBackendConn
 
+	//slot的
 	method forwardMethod
 }
 

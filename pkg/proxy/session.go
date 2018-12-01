@@ -208,6 +208,7 @@ func (s *Session) loopReader(tasks *RequestChan, d *Router) (err error) {
 				return err
 			}
 		} else {
+			//将已经发送到backend的task放入tasks队列中
 			tasks.PushBack(r)
 		}
 	}

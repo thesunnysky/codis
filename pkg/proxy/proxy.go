@@ -2,6 +2,11 @@
 // Licensed under the MIT (MIT-LICENSE.txt) license.
 
 //加油，SUN…
+//请求的过程：
+//1. client连接proxy，proxy创建一个session来处理该请求;
+//2. session调用Router.dispatch*()方法，通过对key进行hash计算，得到该key所属的slot id，
+// 然后从Router中获取slot对象,再调用slot的forward()方法进一步处理
+//3. 进一步将获取BackendConn对象，将request push到slot的BackendConn的input chan中;
 package proxy
 
 import (
@@ -268,7 +273,9 @@ func (s *Proxy) FillSlot(m *models.Slot) error {
 	return s.router.FillSlot(m)
 }
 
-//fill 多个slot
+// fill 多个slot
+//1. 在函数：AutoOnlineWithFillSlots中调用
+//2. 通过ProxyApi来调用
 func (s *Proxy) FillSlots(slots []*models.Slot) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

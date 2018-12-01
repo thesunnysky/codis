@@ -260,6 +260,7 @@ func (bc *BackendConn) selectDatabase(c *redis.Conn, database int) error {
 
 func (bc *BackendConn) setResponse(r *Request, resp *redis.Resp, err error) error {
 	r.Resp, r.Err = resp, err
+	//对应的是Request对应的slot的group，表明当前slot处理的request done了一个
 	if r.Group != nil {
 		r.Group.Done()
 	}
@@ -281,6 +282,7 @@ func (bc *BackendConn) run() {
 	for round := 0; bc.closed.IsFalse(); round++ {
 		log.Warnf("backend conn [%p] to %s, db-%d round-[%d]",
 			bc, bc.addr, bc.database, round)
+		//启动BackendConn的loopWriter()
 		if err := bc.loopWriter(round); err != nil {
 			bc.delayBeforeRetry()
 		}
@@ -419,6 +421,7 @@ type sharedBackendConn struct {
 
 	//所属的pool
 	owner *sharedBackendConnPool
+	//一个conn对一个database
 	conns [][]*BackendConn
 
 	single []*BackendConn
@@ -538,6 +541,7 @@ func (s *sharedBackendConn) BackendConn(database int32, seed uint, must bool) *B
 //后端的共享连接池，保存了proxy到后端redis-server之间的Conn
 type sharedBackendConnPool struct {
 	config   *Config
+	//对同一个addr的conn的副本数，对一个addr的conn数量不止1个
 	parallel int
 
 	//key:codis-server的addr， value:sharedBackendConn

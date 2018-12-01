@@ -30,6 +30,8 @@ type Router struct {
 	closed bool
 }
 
+//proxy创建Router
+//始化了Router中的两个sharedBackendConnPool的结构，
 func NewRouter(config *Config) *Router {
 	s := &Router{config: config}
 	s.pool.primary = newSharedBackendConnPool(config, config.BackendPrimaryParallel)
@@ -138,16 +140,19 @@ func (s *Router) isOnline() bool {
 	return s.online && !s.closed
 }
 
-//将某个request分发给各个具体的slot进行处理,  共有以下三个方法：
-//根据key进行转发
+// 将某个request分发给各个具体的slot进行处理, 该方法有session的handleRequest（）方法中调用，
+// 通过对request的key进行hash运算，得到该key所在的slot id，然后该请求由对应的slot处理
+// 共有以下三个方法：
+//method 1. 根据key进行转发
 func (s *Router) dispatch(r *Request) error {
 	hkey := getHashKey(r.Multi, r.OpStr)
 	var id = Hash(hkey) % MaxSlotNum
 	slot := &s.slots[id]
+	//交由slot的forward()方法来处理请求
 	return slot.forward(r, hkey)
 }
 
-//将request发到指定slot
+//method 2. 将request发到指定slot
 func (s *Router) dispatchSlot(r *Request, id int) error {
 	if id < 0 || id >= MaxSlotNum {
 		return ErrInvalidSlotId
@@ -156,7 +161,7 @@ func (s *Router) dispatchSlot(r *Request, id int) error {
 	return slot.forward(r, nil)
 }
 
-//将request转发到指定的redis服务器地址，如果找不到就返回false
+//method 3. 将request转发到指定的redis服务器地址，如果找不到就返回false
 func (s *Router) dispatchAddr(r *Request, addr string) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -197,11 +202,15 @@ func (s *Router) fillSlot(m *models.Slot, switched bool, method forwardMethod) {
 
 	//set slot.backend.bc
 	if addr := m.BackendAddr; len(addr) != 0 {
+		//设置slot的backendConn
+		//从sharedBackendConnPool尝试后去slot的backendConn，如果没有的话就创建一个Conn在放入pool中
 		slot.backend.bc = s.pool.primary.Retain(addr)
+		//设置slot的backend id
 		slot.backend.id = m.BackendAddrGroupId
 	}
 	//set slot.migrate.bc
 	if from := m.MigrateFrom; len(from) != 0 {
+		//设置slot的migrate backendConn
 		slot.migrate.bc = s.pool.primary.Retain(from)
 		slot.migrate.id = m.MigrateFromGroupId
 	}

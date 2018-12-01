@@ -45,7 +45,7 @@ func (d *forwardSync) Forward(s *Slot, r *Request, hkey []byte) error {
 	if err != nil {
 		return err
 	}
-	//将Request放入BackendConn等待处理
+	//将Request放入BackendConn input chan等待处理
 	bc.PushBack(r)
 	return nil
 }
@@ -82,6 +82,8 @@ func (d *forwardSemiAsync) Forward(s *Slot, r *Request, hkey []byte) error {
 	var loop int
 	for {
 		s.lock.RLock()
+		//获取slot的BackendConn，同时处理slot是否在迁移的情况
+		//retry:是否要重试？
 		bc, retry, err := d.process(s, r, hkey)
 		s.lock.RUnlock()
 
@@ -90,6 +92,7 @@ func (d *forwardSemiAsync) Forward(s *Slot, r *Request, hkey []byte) error {
 			return err
 		case !retry:
 			if bc != nil {
+				//如果retry=true，则将request直接放入BackendConn的input chan中
 				bc.PushBack(r)
 			}
 			return nil
@@ -136,7 +139,9 @@ func (d *forwardSemiAsync) process(s *Slot, r *Request, hkey []byte) (_ *Backend
 		}
 	}
 	r.Group = &s.refs
+	//Request.Group = Slot.Group,表明当前的slot正在处理的Request+1
 	r.Group.Add(1)
+	//获取slot对应的BackendConn
 	return d.forward2(s, r), false, nil
 }
 
@@ -221,6 +226,8 @@ func (d *forwardHelper) slotsmgrtExecWrapper(s *Slot, hkey []byte, database int3
 		return nil, false, fmt.Errorf("bad slotsmgrt-exec-wrapper resp: should be integer, but got %s", resp.Type)
 	}
 }
+
+//获取slot对应的BackendConn
 
 //无论是forwardSync还是forwardSemiAsync，在process的过程中，
 //都要调用的forward2方法来从Slot获取真正处理redis请求的BackendConn
