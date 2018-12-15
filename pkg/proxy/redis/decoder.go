@@ -233,17 +233,28 @@ func (d *Decoder) decodeSingleLineMultiBulk() ([]*Resp, error) {
 	return multi, nil
 }
 
+// redis通信协议实例
+//*3
+//$3
+//SET
+//$5
+//mykey
+//$7
+//myvalue
 func (d *Decoder) decodeMultiBulk() ([]*Resp, error) {
+	//读取一个字节，读取的是redis协议的第一个字符：*,+,-...
 	b, err := d.br.PeekByte()
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
+	//读取参数数量
 	if RespType(b) != TypeArray {
 		return d.decodeSingleLineMultiBulk()
 	}
 	if _, err := d.br.ReadByte(); err != nil {
 		return nil, errors.Trace(err)
 	}
+	//读取参数的个数
 	n, err := d.decodeInt()
 	if err != nil {
 		return nil, errors.Trace(err)
